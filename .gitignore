@@ -1,0 +1,6 @@
+tiny-imagenet-200/
+pretrained_models/
+
+results/
+
+__pycache__/
