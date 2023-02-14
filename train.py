@@ -21,6 +21,7 @@ Basic features that would be nice to add:
     - AMP/bfloat16 support
 """
 import torch
+import torch.nn as nn
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -41,6 +42,8 @@ from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 
 
+debug_mode = True
+use_vae = False
 #################################################################################
 #                             Training Helper Functions                         #
 #################################################################################
@@ -96,7 +99,7 @@ def center_crop_arr(pil_image, image_size):
 
     scale = image_size / min(*pil_image.size)
     pil_image = pil_image.resize(
-        tuple(round(x * scale) for x in pil_image.size), resample=Image.BICUBIC
+        tuple(round(x * scale) for x in pil_image.size), resample=Image.Resampling.BICUBIC
     )
 
     arr = np.array(pil_image)
@@ -124,7 +127,7 @@ def main(args):
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
     # Setup an experiment folder:
-    if rank == 0:
+    if rank == 0 and not debug_mode:
         os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
         experiment_index = len(glob(f"{args.results_dir}/*"))
         experiment_dir = f"{args.results_dir}/{experiment_index:03d}"  # Create a new experiment folder
@@ -134,7 +137,11 @@ def main(args):
 
     # Create model:
     assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
-    latent_size = args.image_size // 8
+    if use_vae:
+        latent_size = args.image_size // 8
+    else:
+        latent_size = args.image_size
+
     model = DiT_models[args.model](
         input_size=latent_size,
         num_classes=args.num_classes
@@ -193,12 +200,19 @@ def main(args):
         mprint(f"Beginning epoch {epoch}...")
         for x, y in loader:
             x = x.to(device)
+            x2 = x.clone()
+
+            h = torch.stack((x, x2), dim=2)
+            # proj = nn.Conv3d(3, 768,  kernel_size=(1, 3, 3), stride=(1, 1, 1), bias=True )
+            # breakpoint()
             y = y.to(device)
-            with torch.no_grad():
-                # Map input images to latent space + normalize latents:
-                x = vae.encode(x).latent_dist.sample().mul_(0.18215)
+            if use_vae:
+                with torch.no_grad():
+                    # Map input images to latent space + normalize latents:
+                    x = vae.encode(x).latent_dist.sample().mul_(0.18215)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(y=y)
+            # breakpoint()
             loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
             loss = loss_dict["loss"].mean()
             opt.zero_grad()
@@ -250,15 +264,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
-    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
-    parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
-    parser.add_argument("--num-classes", type=int, default=1000)
+    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-B/8")
+    parser.add_argument("--image-size", type=int, choices=[64, 256, 512], default=64)
+    parser.add_argument("--num-classes", type=int, default=200)
     parser.add_argument("--epochs", type=int, default=1400)
-    parser.add_argument("--global-batch-size", type=int, default=256)
+    parser.add_argument("--global-batch-size", type=int, default=64)
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
-    parser.add_argument("--ckpt-every", type=int, default=50_000)
+    parser.add_argument("--ckpt-every", type=int, default=5_000)
     args = parser.parse_args()
     main(args)
