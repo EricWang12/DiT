@@ -162,6 +162,7 @@ class ConditioningProcessor(nn.Module):
     """Process conditioning inputs into embeddings."""
     def setup(self):
         self.param_dict = {} # dict with params
+
     def __init__(self, emb_ch, num_resolutions, use_pos_emb=True, use_ref_pose_emb=True):
         super().__init__()
         self.emb_ch = emb_ch
@@ -271,16 +272,16 @@ class XUNet(nn.Module):
 
         breakpoint()
         # Conditioning and embedding.
-        # cond = ConditioningProcessor(
-        #     emb_ch=self.emb_ch,
-        #     num_resolutions=num_resolutions,
-        #     use_pos_emb=self.use_pos_emb,
-        #     use_ref_pose_emb=self.use_ref_pose_emb)
+        cond = ConditioningProcessor(
+            emb_ch=self.emb_ch,
+            num_resolutions=num_resolutions,
+            use_pos_emb=self.use_pos_emb,
+            use_ref_pose_emb=self.use_ref_pose_emb)
 
-        # variables = cond.init(rng, batch, cond_mask)
+        variables = cond.init(rng, batch, cond_mask)
 
-        # logsnr_emb, pose_embs = cond.apply(variables, batch, cond_mask)
-        # del cond_mask
+        logsnr_emb, pose_embs = cond.apply(variables, batch, cond_mask)
+        del cond_mask
 
         
         h = jnp.stack([batch['x'], batch['z']], axis=1)
@@ -359,7 +360,7 @@ if __name__ == "__main__":
     K = random.normal(rng, shape=(1,3, 3))
 
     # Create the dictionary
-    data = {
+    batch = {
         "z": z,
         "x": x,
         "logsnr": logsnr,
@@ -368,7 +369,12 @@ if __name__ == "__main__":
         "K": K
     }
 
-    
+    world_from_cam = v3d.Transform(R=batch['R'], t=batch['t'])
+    cam_spec = v3d.PinholeCamera(resolution=(64,64), K=batch['K'])
+    rays = v3d.Camera(spec=cam_spec, world_from_cam=world_from_cam).rays()
+
+    breakpoint()
+
     ch: int = 256
     ch_mult: tuple[int] = (1, 2, 2, 4)
     emb_ch: int = 1024
