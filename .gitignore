@@ -2,6 +2,8 @@ tiny-imagenet-200/
 pretrained_models/
 
 results/
+datasets/
 
+*.out
 archive/
 __pycache__/

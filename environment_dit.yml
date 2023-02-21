@@ -1,4 +1,4 @@
-name: dit
+name: dit2
 channels:
   - pytorch
   - nvidia
@@ -11,3 +11,6 @@ dependencies:
     - timm
     - diffusers
     - accelerate
+    - visu3d
+    - pytorch3d
+    - torchview

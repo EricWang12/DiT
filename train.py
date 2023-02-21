@@ -89,7 +89,7 @@ def create_logger(logging_dir):
             level=logging.INFO,
             format='[\033[34m%(asctime)s\033[0m] %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S',
-            handlers=[logging.StreamHandler()]
+            handlers=[logging.StreamHandler(), logging.FileHandler(f"{logging_dir}/log.txt")]
         )
         logger = logging.getLogger(__name__)
     else:  # dummy logger (does nothing)
@@ -285,10 +285,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
-    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-S/4")
+    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-B/4")
     parser.add_argument("--image-size", type=int, choices=[64, 256, 512], default=64)
     parser.add_argument("--num-classes", type=int, default=200)
-    parser.add_argument("--epochs", type=int, default=1400)
+    parser.add_argument("--epochs", type=int, default=14000)
     parser.add_argument("--global-batch-size", type=int, default=64)
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training

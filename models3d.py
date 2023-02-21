@@ -18,7 +18,7 @@ from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
 from itertools import repeat
 import collections.abc
 # from torchviz import make_dot
-from torchview import draw_graph
+# from torchview import draw_graph
 import visu3d as v3d
 
 
