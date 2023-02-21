@@ -215,6 +215,10 @@ class LabelEmbedder(nn.Module):
 
 def encode_camera_pose(P, image_size, device):
     R, t, K = P["R"], P["t"], P["K"]
+    if type(R) == torch.Tensor:
+        R = R.numpy()
+        t = t.numpy()
+        K = K.numpy()
 
     rays = get_rays_vis(R, t, K, image_size, image_size)
     # breakpoint()
@@ -242,7 +246,7 @@ class CameraPoseEmbedder(nn.Module):
     """
     Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
     """
-    def __init__(self, image_size,  hidden_size, dropout_prob, device):
+    def __init__(self, image_size,  hidden_size, dropout_prob):
         super().__init__()
         use_cfg_embedding = dropout_prob > 0
         # self.embedding_table = nn.Embedding(num_classes + use_cfg_embedding, hidden_size)
@@ -268,7 +272,7 @@ class CameraPoseEmbedder(nn.Module):
 
         embeddings = self.conv(pose_emb)
         embeddings = embeddings.permute(0,2,3,4,1)
-        embeddings = embeddings.reshape(embeddings.shape[0], embeddings.shape[1], -1)
+        embeddings = embeddings.view(embeddings.shape[0], embeddings.shape[1], -1)
         embeddings = self.linear(embeddings)
         return embeddings # N x D x T
 
@@ -355,7 +359,6 @@ class DiT3d(nn.Module):
         num_heads=16,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
-        num_classes=1000,
         learn_sigma=True,
     ):
         super().__init__()
@@ -366,8 +369,8 @@ class DiT3d(nn.Module):
         self.num_heads = num_heads
         self.x_embedder = PatchEmbed3D(input_size, patch_size, in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size)
-        self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        self.P_embedder = CameraPoseEmbedder(input_size, hidden_size, class_dropout_prob, device)
+        # self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
+        self.P_embedder = CameraPoseEmbedder(input_size, hidden_size, class_dropout_prob)
         num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
@@ -399,7 +402,7 @@ class DiT3d(nn.Module):
         nn.init.constant_(self.x_embedder.proj.bias, 0)
 
         # Initialize label embedding table:
-        nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
+        # nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
 
         # Initialize label embedding table:
         nn.init.normal_(self.P_embedder.conv.weight, std=0.02)
@@ -444,6 +447,7 @@ class DiT3d(nn.Module):
         P: {"R": R (2, 3, 3), "t": t (2, 3), "K": K (2, 3, 3)} dictionary of Camera parameters
         """
         # N, C, D, H, W = x.shape
+        # breakpoint()
         x = self.x_embedder(x) + torch.concat([self.pos_embed, self.pos_embed], dim = 1)  # (N, T, D), where T = H * W * 2 / patch_size ** 2
         N, T, D = x.shape
         # t = self.t_embedder(t)                   # (N, D)
@@ -558,6 +562,9 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 def DiT_B_4(**kwargs):
     return DiT3d(depth=12, hidden_size=768, patch_size=4, num_heads=12, **kwargs)
 
+def DiT_S_4(**kwargs):
+    return DiT3d(depth=8, hidden_size=384, patch_size=8, num_heads=12, **kwargs)
+
 # def DiT_B_8(**kwargs):
 #     return DiT3d(depth=12, hidden_size=768, patch_size=8, num_heads=12, **kwargs)
 
@@ -573,12 +580,14 @@ def DiT_B_4(**kwargs):
 def DiT_M_4(**kwargs):
     return DiT3d(depth=2, hidden_size=384, patch_size=4, num_heads=12, **kwargs)
 
-# DiT_models = {
-#     'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
-#     'DiT-L/2':  DiT_L_2,   'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
-#     'DiT-B/2':  DiT_B_2,   'DiT-B/4':  DiT_B_4,   'DiT-B/8':  DiT_B_8,
-#     'DiT-S/2':  DiT_S_2,   'DiT-S/4':  DiT_S_4,   'DiT-S/8':  DiT_S_8,
-# }
+DiT_models = {
+    # 'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
+    # 'DiT-L/2':  DiT_L_2,   'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
+    # 'DiT-B/2':  DiT_B_2,   
+    'DiT-B/4':  DiT_B_4,
+    'DiT-S/4':  DiT_S_4,
+    #    'DiT-B/8':  DiT_B_8,  'DiT-S/2':  DiT_S_2,      'DiT-S/8':  DiT_S_8,
+}
 
 
 def get_camera_rays(R, t, K, H, W):
@@ -638,6 +647,7 @@ if __name__ == "__main__":
         input_size=input_size,
         num_classes=200,
     ).to(device="cuda")
+    breakpoint()
     out = model(x,time_stamp , encode_camera_pose(P, input_size, device=device))
 
     # make_dot(out.mean(), params=dict(model.named_parameters())).render("DiT_B_4", format="png")

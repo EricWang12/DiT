@@ -1,12 +1,13 @@
 import math
 import random
-
+import os
 from PIL import Image
-import blobfile as bf
-from mpi4py import MPI
+# import blobfile as bf
+# from mpi4py import MPI
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
-
+import torch
+import random
 
 def load_data(
     *,
@@ -121,6 +122,61 @@ class ImageDataset(Dataset):
         if self.local_classes is not None:
             out_dict["y"] = np.array(self.local_classes[idx], dtype=np.int64)
         return np.transpose(arr, [2, 0, 1]), out_dict
+
+
+class THumanDataset(Dataset):
+    def __init__(
+        self,
+        data_dir,
+        transform=None,
+    ):
+        super().__init__()
+        # self.cameras = np.load(f"{}/0000/camera_pose.npy",  allow_pickle=True).item()
+        # self.camera_path = 
+        self.data_dir = data_dir
+        self.image_paths = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
+        assert len(self.image_paths) > 0, "No images found in {}".format(data_dir)
+        self.view_length = len(os.listdir(self.image_paths[0])) - 1
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        
+        image_idxs = random.sample(range(0, self.view_length), 2)
+        
+        object_path = self.image_paths[idx]
+
+        image_path1 = os.path.join(object_path, f"{image_idxs[0]}.png")
+        image_path2 = os.path.join(object_path, f"{image_idxs[1]}.png")
+
+        image1 = Image.open(image_path1)
+        image2 = Image.open(image_path2)
+
+        image1 = torch.tensor(np.array(image1)).float().permute(2, 0, 1) / 255.0
+        image2 = torch.tensor(np.array(image2)).float().permute(2, 0, 1) / 255.0
+
+        x = torch.stack([image1, image2], dim=0)
+
+        cameras = np.load( os.path.join(object_path,"camera_pose.npy"),  allow_pickle=True).item()
+
+
+        K0, R0, t0 = cameras[image_idxs[0]]["K"], cameras[image_idxs[0]]["R"], cameras[image_idxs[0]]["T"]
+        K1, R1, t1 = cameras[image_idxs[1]]["K"], cameras[image_idxs[1]]["R"], cameras[image_idxs[1]]["T"]
+
+        K = np.stack([K0, K1], axis=0)
+        R = np.concatenate([R0, R1], axis=0)
+        t = np.concatenate([t0, t1], axis=0)
+
+        # breakpoint()
+        if self.transform:
+            x = self.transform(x)
+
+        x = x.permute(1,0,2,3)
+        P = {"K": K, "R": R, "t": t}
+        return  x, P
+
 
 
 def center_crop_arr(pil_image, image_size):

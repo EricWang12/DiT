@@ -283,6 +283,7 @@ class GaussianDiffusion:
             extra = None
 
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
+            # changed to x.shape[3:0] for 3d
             assert model_output.shape == (B, C * 2, *x.shape[2:])
             model_output, model_var_values = th.split(model_output, C, dim=1)
             min_log = _extract_into_tensor(self.posterior_log_variance_clipped, t, x.shape)
@@ -727,8 +728,11 @@ class GaussianDiffusion:
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
-            noise = th.randn_like(x_start)
-        x_t = self.q_sample(x_start, t, noise=noise)
+            noise = th.randn_like(x_start[:,:,0,:,:])
+        x_t = self.q_sample(x_start[:,:,0,:,:], t, noise=noise)
+
+        # breakpoint()
+        x_t = th.stack((x_t, x_start[:,:,1,:,:]), dim=2) 
 
         terms = {}
 
@@ -746,12 +750,19 @@ class GaussianDiffusion:
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
             model_output = model(x_t, t, **model_kwargs)
 
+            x_start=x_start[:, :, 0, :, :]
+            x_t=x_t[:, :, 0, :, :]
+
             if self.model_var_type in [
                 ModelVarType.LEARNED,
                 ModelVarType.LEARNED_RANGE,
             ]:
                 B, C = x_t.shape[:2]
+
+                # changed to x.shape[3:0] for 3d
                 assert model_output.shape == (B, C * 2, *x_t.shape[2:])
+                # breakpoint()
+                
                 model_output, model_var_values = th.split(model_output, C, dim=1)
                 # Learn the variance using the variational bound, but don't let
                 # it affect our mean prediction.
@@ -775,6 +786,7 @@ class GaussianDiffusion:
                 ModelMeanType.START_X: x_start,
                 ModelMeanType.EPSILON: noise,
             }[self.model_mean_type]
+            # breakpoint()
             assert model_output.shape == target.shape == x_start.shape
             terms["mse"] = mean_flat((target - model_output) ** 2)
             if "vb" in terms:
