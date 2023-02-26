@@ -281,9 +281,14 @@ class GaussianDiffusion:
             model_output, extra = model_output
         else:
             extra = None
+        
+        # if x contains the reference image, remove it
+        if x.dim() == 5:
+            x = x[:, :, 0, :,:]
 
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
             # changed to x.shape[3:0] for 3d
+            
             assert model_output.shape == (B, C * 2, *x.shape[2:])
             model_output, model_var_values = th.split(model_output, C, dim=1)
             min_log = _extract_into_tensor(self.posterior_log_variance_clipped, t, x.shape)
@@ -408,12 +413,13 @@ class GaussianDiffusion:
             denoised_fn=denoised_fn,
             model_kwargs=model_kwargs,
         )
-        noise = th.randn_like(x)
+        noise = th.randn_like(x[:,:,0,:,:])
         nonzero_mask = (
-            (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
+            (t != 0).float().view(-1, *([1] * (len(x[:,:,0,:,:].shape) - 1)))
         )  # no noise when t == 0
         if cond_fn is not None:
             out["mean"] = self.condition_mean(cond_fn, out, x, t, model_kwargs=model_kwargs)
+        # breakpoint()
         sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 
@@ -490,6 +496,8 @@ class GaussianDiffusion:
             img = th.randn(*shape, device=device)
         indices = list(range(self.num_timesteps))[::-1]
 
+        ref_image = img.clone()
+        # breakpoint()
         if progress:
             # Lazy import so that we don't depend on tqdm.
             from tqdm.auto import tqdm
@@ -509,7 +517,9 @@ class GaussianDiffusion:
                     model_kwargs=model_kwargs,
                 )
                 yield out
-                img = out["sample"]
+                ref_image[:,:,0,:,:] = out["sample"]
+                img = ref_image
+                # img = out["sample"]
 
     def ddim_sample(
         self,

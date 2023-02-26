@@ -7,3 +7,5 @@ datasets/
 *.out
 archive/
 __pycache__/
+
+output/

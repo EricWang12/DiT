@@ -259,6 +259,7 @@ class CameraPoseEmbedder(nn.Module):
         self.linear = nn.Sequential(
             nn.SiLU(),
             nn.Linear(hidden_size * (image_size//2)* (image_size//2), hidden_size, bias=True),
+            # nn.SiLU(),
         )
 
         # mlp_hidden_dim = int(hidden_size * (image_size//2))
@@ -266,9 +267,24 @@ class CameraPoseEmbedder(nn.Module):
         # self.mlp = Mlp(in_features=hidden_size * (image_size//2)* (image_size//2), hidden_features=mlp_hidden_dim, out_features=hidden_size, act_layer=silu, drop=0.1)
 
 
+    def token_drop(self, labels, force_drop_ids=None):
+        """
+        Drops labels to enable classifier-free guidance.
+        """
+        if force_drop_ids is None:
+            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
+        else:
+            drop_ids = force_drop_ids == 1
+        
+        labels = torch.where(drop_ids[:,None,None,None,None], torch.zeros_like(labels), labels)
+        return labels
+    
+
     def forward(self, pose_emb, train, force_drop_ids=None):
 
-
+        use_dropout = self.dropout_prob > 0
+        if (train and use_dropout) or (force_drop_ids is not None):
+            pose_emb = self.token_drop(pose_emb, force_drop_ids)
 
         embeddings = self.conv(pose_emb)
         embeddings = embeddings.permute(0,2,3,4,1)
@@ -444,19 +460,23 @@ class DiT3d(nn.Module):
         Forward pass of DiT.
         x: (N, C, D, H, W) tensor of spatial inputs (images or latent representations of images)
         t: (N,) tensor of diffusion timesteps
-        P: {"R": R (2, 3, 3), "t": t (2, 3), "K": K (2, 3, 3)} dictionary of Camera parameters
+        P: (N, C, D, H, W) tensor, embedded from {"R": R (2, 3, 3), "t": t (2, 3), "K": K (2, 3, 3)} dictionary of Camera parameters
+
         """
-        # N, C, D, H, W = x.shape
+        # N, C, 2, H, W = x.shape
+        # D => self.hidden_size
         # breakpoint()
         x = self.x_embedder(x) + torch.concat([self.pos_embed, self.pos_embed], dim = 1)  # (N, T, D), where T = H * W * 2 / patch_size ** 2
         N, T, D = x.shape
-        # t = self.t_embedder(t)                   # (N, D)
-        y = self.P_embedder(P, self.training)    # (N, D)
-        # breakpoint()
-        # c = t + y                                # (N, D)
+        t = self.t_embedder(t)                   # (N, 2, D)
+        t = torch.stack([t,t],1)
+
+        y = self.P_embedder(P, self.training)    # (N, 2, D)
+
+        c = t + y                                # (N, 2, D)
         for block in self.blocks:
-            x = block(x, y)                      # (N, T, D)
-        x = self.final_layer(x[:,:T//2,:], y[:,0,:])                # (N, T, patch_size ** 2 * out_channels)
+            x = block(x, c)                      # (N, T, D)
+        x = self.final_layer(x[:,:T//2,:], c[:,0,:])                # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)                   # (N, out_channels, H, W)
         return x
 
@@ -471,8 +491,8 @@ class DiT3d(nn.Module):
         # For exact reproducibility reasons, we apply classifier-free guidance on only
         # three channels by default. The standard approach to cfg applies it to all channels.
         # This can be done by uncommenting the following line and commenting-out the line following that.
-        # eps, rest = model_out[:, :self.in_channels], model_out[:, self.in_channels:]
-        eps, rest = model_out[:, :3], model_out[:, 3:]
+        eps, rest = model_out[:, :self.in_channels], model_out[:, self.in_channels:]
+        # eps, rest = model_out[:, :3], model_out[:, 3:]
         cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
         half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
         eps = torch.cat([half_eps, half_eps], dim=0)
@@ -538,26 +558,26 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #                                   DiT Configs                                  #
 #################################################################################
 
-# def DiT_XL_2(**kwargs):
-#     return DiT(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
+def DiT_XL_2(**kwargs):
+    return DiT3d(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
 
-# def DiT_XL_4(**kwargs):
-#     return DiT(depth=28, hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
+def DiT_XL_4(**kwargs):
+    return DiT3d(depth=28, hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
 
-# def DiT_XL_8(**kwargs):
-#     return DiT(depth=28, hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
+def DiT_XL_8(**kwargs):
+    return DiT3d(depth=28, hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
 
-# def DiT_L_2(**kwargs):
-#     return DiT(depth=24, hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
+def DiT_L_2(**kwargs):
+    return DiT3d(depth=24, hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
 
-# def DiT_L_4(**kwargs):
-#     return DiT(depth=24, hidden_size=1024, patch_size=4, num_heads=16, **kwargs)
+def DiT_L_4(**kwargs):
+    return DiT3d(depth=24, hidden_size=1024, patch_size=4, num_heads=16, **kwargs)
 
-# def DiT_L_8(**kwargs):
-#     return DiT(depth=24, hidden_size=1024, patch_size=8, num_heads=16, **kwargs)
+def DiT_L_8(**kwargs):
+    return DiT3d(depth=24, hidden_size=1024, patch_size=8, num_heads=16, **kwargs)
 
-# def DiT_B_2(**kwargs):
-#     return DiT(depth=12, hidden_size=768, patch_size=2, num_heads=12, **kwargs)
+def DiT_B_2(**kwargs):
+    return DiT3d(depth=12, hidden_size=768, patch_size=2, num_heads=12, **kwargs)
 
 def DiT_B_4(**kwargs):
     return DiT3d(depth=12, hidden_size=768, patch_size=4, num_heads=12, **kwargs)
@@ -565,28 +585,30 @@ def DiT_B_4(**kwargs):
 def DiT_S_4(**kwargs):
     return DiT3d(depth=8, hidden_size=384, patch_size=8, num_heads=12, **kwargs)
 
-# def DiT_B_8(**kwargs):
-#     return DiT3d(depth=12, hidden_size=768, patch_size=8, num_heads=12, **kwargs)
+def DiT_B_8(**kwargs):
+    return DiT3d(depth=12, hidden_size=768, patch_size=8, num_heads=12, **kwargs)
 
-# def DiT_S_2(**kwargs):
-#     return DiT(depth=12, hidden_size=384, patch_size=2, num_heads=6, **kwargs)
+def DiT_S_2(**kwargs):
+    return DiT3d(depth=12, hidden_size=384, patch_size=2, num_heads=6, **kwargs)
 
-# def DiT_S_4(**kwargs):
-#     return DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
+def DiT_S_4(**kwargs):
+    return DiT3d(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
 
-# def DiT_S_8(**kwargs):
-#     return DiT(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
+def DiT_S_8(**kwargs):
+    return DiT3d(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
 
 def DiT_M_4(**kwargs):
     return DiT3d(depth=2, hidden_size=384, patch_size=4, num_heads=12, **kwargs)
 
 DiT_models = {
-    # 'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
-    # 'DiT-L/2':  DiT_L_2,   'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
-    # 'DiT-B/2':  DiT_B_2,   
+    'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
+      'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
+    'DiT-B/2':  DiT_B_2,  
+    'DiT-XL/2': DiT_XL_2,
+    'DiT-L/2':  DiT_L_2,  
     'DiT-B/4':  DiT_B_4,
     'DiT-S/4':  DiT_S_4,
-    #    'DiT-B/8':  DiT_B_8,  'DiT-S/2':  DiT_S_2,      'DiT-S/8':  DiT_S_8,
+       'DiT-B/8':  DiT_B_8,  'DiT-S/2':  DiT_S_2,      'DiT-S/8':  DiT_S_8,
 }
 
 
@@ -617,8 +639,8 @@ if __name__ == "__main__":
     device = "cuda"
     B = 8
     input_size = 64
-    x1 = torch.ones(B, 3, 64, 64).to(device="cuda")
-    x2 = torch.zeros(B, 3, 64, 64).to(device="cuda")
+    x1 = torch.ones(B, 4, 64, 64).to(device="cuda")
+    x2 = torch.zeros(B, 4, 64, 64).to(device="cuda")
     x = torch.stack([x1, x2], dim=2).to(device="cuda")
     time_stamp = torch.randint(0, 1000, (x.shape[0],), device=device)
     y = torch.randint(0, 200, (x.shape[0],), device=device)
@@ -645,10 +667,10 @@ if __name__ == "__main__":
 
     model = DiT_M_4(
         input_size=input_size,
-        num_classes=200,
+        in_channels=4,
     ).to(device="cuda")
-    breakpoint()
     out = model(x,time_stamp , encode_camera_pose(P, input_size, device=device))
+    breakpoint()
 
     # make_dot(out.mean(), params=dict(model.named_parameters())).render("DiT_B_4", format="png")
 
