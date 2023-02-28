@@ -46,7 +46,7 @@ conda info
 
 # Run PyTorch Training
 echo "Training Start:"
-torchrun --nnodes=1 --nproc_per_node=1 train.py --data-path datasets/THuman_random_64 --model "DiT-S/4"
+torchrun --nnodes=1 --nproc_per_node=1 train.py --data-path datasets/THuman_random_64 --model "DiT-B/2"
 echo
 
 # Now we'll try it out by scaling up one of the testing images from the dataset

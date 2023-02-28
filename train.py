@@ -22,6 +22,8 @@ Basic features that would be nice to add:
 """
 import torch
 import torch.nn as nn
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -94,7 +96,7 @@ def create_logger(logging_dir):
         logger = logging.getLogger(__name__)
     else:  # dummy logger (does nothing)
         logger = logging.getLogger(__name__)
-        logger.addHandler([logging.NullHandler(),  logging.FileHandler(f"{logging_dir}/log.txt")])
+        logger.addHandler(logging.NullHandler())
     return logger
 
 
@@ -150,7 +152,7 @@ def main(args):
         logger = create_logger(experiment_dir)
         logger.info(f"Experiment directory created at {experiment_dir}")
     else:
-        logger = create_logger("./logs.txt")
+        logger = create_logger(None)
 
     # Create model:
     assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
@@ -168,7 +170,7 @@ def main(args):
     requires_grad(ema, False)
     model = DDP(model.to(device), device_ids=[rank], find_unused_parameters=True)
     diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
-    vae = AutoencoderKL.from_pretrained("/media/exx/8TB1/ewang/CODE/DiT/pretrained_models/vae_diffuser",local_files_only=True).to(device)
+    vae = AutoencoderKL.from_pretrained("./pretrained_models/vae_diffuser",local_files_only=True).to(device)
     logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
@@ -291,7 +293,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
-    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-B/4")
+    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-B/2")
     parser.add_argument("--image-size", type=int, choices=[64, 256, 512], default=64)
     # parser.add_argument("--num-classes", type=int, default=200)
     parser.add_argument("--epochs", type=int, default=60000)

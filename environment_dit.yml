@@ -2,15 +2,16 @@ name: dit2
 channels:
   - pytorch
   - nvidia
+  - pytorch3d
 dependencies:
   - python >= 3.9
   - pytorch >= 1.13
   - torchvision
   - pytorch-cuda=11.7
+  - pytorch3d
   - pip:
     - timm
     - diffusers
     - accelerate
     - visu3d
-    - pytorch3d
     - torchview
