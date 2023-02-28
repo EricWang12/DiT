@@ -295,7 +295,7 @@ if __name__ == "__main__":
     parser.add_argument("--image-size", type=int, choices=[64, 256, 512], default=64)
     # parser.add_argument("--num-classes", type=int, default=200)
     parser.add_argument("--epochs", type=int, default=60000)
-    parser.add_argument("--global-batch-size", type=int, default=512)
+    parser.add_argument("--global-batch-size", type=int, default=256)
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
     parser.add_argument("--num-workers", type=int, default=4)

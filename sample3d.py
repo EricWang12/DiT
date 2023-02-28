@@ -101,37 +101,44 @@ def main(args):
         assert args.num_classes == 1000
 
     # Load model:
-    latent_size = args.image_size #// 8
+    latent_size = args.image_size // 8
+    # breakpoint()
+
     model = DiT_models[args.model](
         input_size=latent_size,
+        in_channels=4,
     ).to(device)
     # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
     ckpt_path = args.ckpt or f"DiT-XL-2-{args.image_size}x{args.image_size}.pt"
+
     state_dict = find_model(ckpt_path)
     model.load_state_dict(state_dict)
     model.eval()  # important!
     diffusion = create_diffusion(str(args.num_sampling_steps))
+    vae = AutoencoderKL.from_pretrained("/media/exx/8TB1/ewang/CODE/DiT/pretrained_models/vae_diffuser",local_files_only=True).to(device)
 
     # Create sampling noise:
     for i in tqdm(range(100), position = 0, leave = False):
-        z = torch.randn(1, 3, latent_size, latent_size, device=device)
-        id = f"{random.randint(0, len(os.listdir(args.image_path))-1):04d}"
+        z = torch.randn(1, 4, latent_size, latent_size, device=device)
+        id = f"{random.randint(512, 512+len(os.listdir(args.image_path))-1):04d}"
         ref, P = get_human( os.path.join(args.image_path, id), args.image_idxs, transform=transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True))
         ref_original = deepcopy(ref)
         ref = ref.unsqueeze(0).to(device)
-        ref[:,:,0,:,:] = z
         # breakpoint()
+        ref_x = vae.encode(ref[:,:,0,:,:]).latent_dist.sample().mul_(0.18215)
+        ref = torch.stack([ref_x, z], dim=2)
         P =  encode_camera_pose(P, latent_size, device=device)
         P_null = torch.zeros_like(P)
         P = torch.cat([P, P_null], 0)
-        model_kwargs = dict(P=P_null)
+        model_kwargs = dict(y=P_null, cfg_scale=args.cfg_scale)
         
         ref = torch.cat([ref, ref], 0)
 
         samples = diffusion.p_sample_loop(
             model.forward_with_cfg, ref.shape, ref, clip_denoised=False, model_kwargs=model_kwargs, progress=True, device=device
         )
-
+        samples, _ = samples.chunk(2, dim=0)  # Remove null class samples
+        samples = vae.decode(samples / 0.18215).sample
         out_image = torch.concatenate([ref_original.permute(1,0,2,3) , samples.cpu()], dim=0)
         save_image(out_image, f"{args.output_path}/sample_{i}.png")
         # breakpoint()
@@ -140,18 +147,18 @@ def main(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-S/4")
+    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-B/4")
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="mse")
     parser.add_argument("--image-size", type=int, choices=[64,256, 512], default=64)
     parser.add_argument("--num-classes", type=int, default=200)
     parser.add_argument("--cfg-scale", type=float, default=4.0)
     parser.add_argument("--num-sampling-steps", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--ckpt", type=str, default="./0085000.pt",
+    parser.add_argument("--ckpt", type=str, default="results/024-DiT-B-4/checkpoints/0095000.pt",
                         help="Optional path to a DiT checkpoint (default: auto-download a pre-trained DiT-XL/2 model).")
-    parser.add_argument("--image-path", type=str, default="results/THuman_random_64/", help="path to the image folder")
+    parser.add_argument("--image-path", type=str, default="results/THuman_random_64/test", help="path to the image folder")
     parser.add_argument("--image-idxs", type=int, nargs=2, default=None, help="image indexes of (source, target)")
-    parser.add_argument("--output-path", type=str, default="./output", help="path to the image folder")
+    parser.add_argument("--output-path", type=str, default="./output/out_vae", help="path to the image folder")
 
     args = parser.parse_args()
     main(args)
