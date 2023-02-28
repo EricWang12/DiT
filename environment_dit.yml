@@ -15,3 +15,6 @@ dependencies:
     - accelerate
     - visu3d
     - torchview
+    - omegaconf
+    - transformers
+

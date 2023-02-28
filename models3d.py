@@ -465,7 +465,6 @@ class DiT3d(nn.Module):
         """
         # N, C, 2, H, W = x.shape
         # D => self.hidden_size
-        # breakpoint()
         x = self.x_embedder(x) + torch.concat([self.pos_embed, self.pos_embed], dim = 1)  # (N, T, D), where T = H * W * 2 / patch_size ** 2
         N, T, D = x.shape
         t = self.t_embedder(t)                   # (N, 2, D)

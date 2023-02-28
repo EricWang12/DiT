@@ -163,14 +163,14 @@ def main(args):
 
     model = DiT_models[args.model](
         input_size=latent_size,
-        in_channels=4,
+        in_channels=args.latent_channels,
     )
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
     model = DDP(model.to(device), device_ids=[rank], find_unused_parameters=True)
     diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
-    vae = AutoencoderKL.from_pretrained("./pretrained_models/vae_diffuser",local_files_only=True).to(device)
+    vae = AutoencoderKL.from_pretrained(f"./pretrained_models/vae_{args.image_size}_{args.latent_channels}",local_files_only=True).to(device)
     logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
@@ -221,20 +221,22 @@ def main(args):
         logger.info(f"Beginning epoch {epoch}...")
         # breakpoint()
         for x, y in loader:
+
+            assert x.shape[-1]==x.shape[-2]==args.image_size, f"Image size must be {args.image_size}x{args.image_size}."
             x = x.to(device)
+
             # x2 = x.clone()
             # breakpoint()
 
             # h = torch.stack((x, x2), dim=2)
             # proj = nn.Conv3d(3, 768,  kernel_size=(1, 3, 3), stride=(1, 1, 1), bias=True )
-            # breakpoint()
+            # 
             # y = y.to(device)
             if use_vae:
                 with torch.no_grad():
                     # Map input images to latent space + normalize latents:
                     x0 = vae.encode(x[:,:,0,:,:]).latent_dist.sample().mul_(0.18215)
                     x1 = vae.encode(x[:,:,1,:,:]).latent_dist.sample().mul_(0.18215)
-
             x = torch.stack((x0, x1), dim=2)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             # breakpoint()
@@ -297,11 +299,13 @@ if __name__ == "__main__":
     parser.add_argument("--image-size", type=int, choices=[64, 256, 512], default=64)
     # parser.add_argument("--num-classes", type=int, default=200)
     parser.add_argument("--epochs", type=int, default=60000)
-    parser.add_argument("--global-batch-size", type=int, default=256)
+    parser.add_argument("--global-batch-size", type=int, default=512)
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
-    parser.add_argument("--ckpt-every", type=int, default=2500)
+    parser.add_argument("--ckpt-every", type=int, default=5000)
+    parser.add_argument("--latent_channels", type=int, default=4)
+
     args = parser.parse_args()
     main(args)

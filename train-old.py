@@ -254,7 +254,7 @@ if __name__ == "__main__":
     parser.add_argument("--data-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-B/2")
-    parser.add_argument("--image-size", type=int, choices=[64, 256, 512], default=64)
+    parser.add_argument("--image-size", type=int, choices=[64, 256, 512], default=256)
     parser.add_argument("--num-classes", type=int, default=200)
     parser.add_argument("--epochs", type=int, default=1400)
     parser.add_argument("--global-batch-size", type=int, default=512)

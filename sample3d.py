@@ -140,7 +140,7 @@ def main(args):
         samples, _ = samples.chunk(2, dim=0)  # Remove null class samples
         samples = vae.decode(samples / 0.18215).sample
         out_image = torch.concatenate([ref_original.permute(1,0,2,3) , samples.cpu()], dim=0)
-        save_image(out_image, f"{args.output_path}/sample_{i}.png")
+        save_image(out_image, f"{args.output_path}/sample_{i}.png", normalize=True, value_range=(-1, 1))
         # breakpoint()
 
 

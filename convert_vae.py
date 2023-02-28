@@ -121,13 +121,16 @@ def vae_pt_to_vae_diffuser(
     output_path: str,
 ):
     # Only support V1
+    # Only support V1
     r = requests.get(
         " https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml"
     )
-    io_obj = io.BytesIO(r.content)
+
+    with open( "./pretrained_models/config_64.yaml", "rb")  as f:
+        io_obj = io.BytesIO(f.read())
 
     original_config = OmegaConf.load(io_obj)
-    image_size = 64
+    image_size = 256
     device = "cuda" if torch.cuda.is_available() else "cpu"
     checkpoint = torch.load(checkpoint_path, map_location=device)
 
@@ -143,8 +146,8 @@ def vae_pt_to_vae_diffuser(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--vae_pt_path", default="/media/exx/8TB1/ewang/CODE/DiT/pretrained_models/vae/vae_64_32x32x4.ckpt", type=str,  help="Path to the VAE.pt to convert.")
-    parser.add_argument("--dump_path", default="/media/exx/8TB1/ewang/CODE/DiT/pretrained_models/vae_diffuser", type=str,  help="Path to the VAE.pt to convert.")
+    parser.add_argument("--vae_pt_path", default="./pretrained_models/vae_256_64.ckpt", type=str,  help="Path to the VAE.pt to convert.")
+    parser.add_argument("--dump_path", default="./pretrained_models/vae_256_64", type=str,  help="Path to the VAE.pt to convert.")
 
     args = parser.parse_args()
 
